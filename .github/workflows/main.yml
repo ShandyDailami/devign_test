@@ -1,0 +1,57 @@
+name: "CodeQL Analysis Dataset"
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  analyze:
+    name: Analyze
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [ 'cpp' ] # C/C++ masuk kategori 'cpp'
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    # 1. Inisialisasi CodeQL
+    - name: Initialize CodeQL
+      uses: github/codeql-action/init@v3 # Bisa ubah ke v4 biar warning hilang
+      with:
+        languages: ${{ matrix.language }}
+        # Matikan trap caching agar lebih hemat space
+        # debug: true 
+
+    # 2. MANUAL BUILD (INI KUNCINYA!)
+    # Kita paksa GCC compile semua file .c tapi hanya sintaks (flag -c)
+    # agar CodeQL bisa merekam struktur kodenya.
+    - name: Build Manually
+      run: |
+        echo "Starting manual build for dataset..."
+        # Cari semua file .c dan compile satu per satu
+        # Ganti 'folder_dataset' dengan nama folder tempat file .c kamu berada
+        find . -name "*.c" -exec gcc -c {} \; 
+
+    # 3. Lakukan Analisis
+    - name: Perform CodeQL Analysis
+      uses: github/codeql-action/analyze@v3
+      with:
+        category: "/language:${{ matrix.language }}"
+        output: results # Simpan hasil di folder 'results'
+
+    # 4. Upload Hasil SARIF (Supaya bisa kamu download)
+    - name: Upload SARIF as Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: codeql-results
+        path: results/cpp.sarif
