@@ -1,14 +1,16 @@
-name: "CodeQL Analysis Dataset"
+name: "CodeQL Dataset Scan"
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "main", "master" ]
   pull_request:
-    branches: [ "main" ]
+    branches: [ "main", "master" ]
+  # TAMBAHAN PENTING: Supaya bisa di-klik "Run workflow" manual
+  workflow_dispatch:
 
 jobs:
   analyze:
-    name: Analyze
+    name: Analyze Dataset
     runs-on: ubuntu-latest
     permissions:
       actions: read
@@ -18,40 +20,51 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        language: [ 'cpp' ] # C/C++ masuk kategori 'cpp'
+        language: [ 'cpp' ]
 
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
 
-    # 1. Inisialisasi CodeQL
+    # 1. Inisialisasi
     - name: Initialize CodeQL
-      uses: github/codeql-action/init@v3 # Bisa ubah ke v4 biar warning hilang
+      uses: github/codeql-action/init@v3
       with:
         languages: ${{ matrix.language }}
-        # Matikan trap caching agar lebih hemat space
-        # debug: true 
+        # Kita set build-mode ke manual agar tidak otomatis mencari Makefile
+        build-mode: manual 
 
-    # 2. MANUAL BUILD (INI KUNCINYA!)
-    # Kita paksa GCC compile semua file .c tapi hanya sintaks (flag -c)
-    # agar CodeQL bisa merekam struktur kodenya.
-    - name: Build Manually
+    # 2. MANUAL BUILD (ROBUST / TAHAN BANTING)
+    # Script ini akan mencoba compile satu per satu.
+    # Jika error, dia akan print "Failed" tapi TIDAK AKAN STOP workflow.
+    - name: Build Dataset Manually
       run: |
-        echo "Starting manual build for dataset..."
-        # Cari semua file .c dan compile satu per satu
-        # Ganti 'folder_dataset' dengan nama folder tempat file .c kamu berada
-        find . -name "*.c" -exec gcc -c {} \; 
+        echo "=== STARTING ROBUST BUILD ==="
+        # Cari semua file .c
+        # Loop setiap file
+        find . -type f -name "*.c" | while read -r file; do
+            # Coba compile (-c), include current dir (-I.), abaikan error (|| true)
+            gcc -c "$file" -I. -o /dev/null 2>/dev/null || echo "Warning: Failed to compile $file (Skipping)"
+        done
+        echo "=== BUILD PROCESS FINISHED (Errors ignored) ==="
+        # Paksa exit 0 agar step ini dianggap SUKSES oleh GitHub Actions
+        exit 0
 
-    # 3. Lakukan Analisis
+    # 3. Buat folder untuk hasil
+    - name: Create Result Directory
+      run: mkdir -p codeql-results
+
+    # 4. Lakukan Analisis
     - name: Perform CodeQL Analysis
       uses: github/codeql-action/analyze@v3
       with:
         category: "/language:${{ matrix.language }}"
-        output: results # Simpan hasil di folder 'results'
+        output: codeql-results # Simpan hasil di folder ini
+        upload: false # Jangan upload ke Security Tab dulu, kita mau download file-nya
 
-    # 4. Upload Hasil SARIF (Supaya bisa kamu download)
-    - name: Upload SARIF as Artifact
+    # 5. Upload File SARIF agar bisa didownload
+    - name: Upload SARIF Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: codeql-results
-        path: results/cpp.sarif
+        name: codeql-dataset-results
+        path: codeql-results/cpp.sarif
